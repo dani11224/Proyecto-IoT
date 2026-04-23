@@ -215,7 +215,7 @@ El MVP demuestra el ciclo completo: **depositar un objeto → clasificarlo con I
 
 ## 👥 Equipo
 
-> _(Agregar nombres y roles del equipo aquí)_
+>Daniel Sanchez Sotelo, Juan Camilo Gomez Bayona, Jeronimo Infante Vega
 
 ---
 
