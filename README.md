@@ -1,224 +1,322 @@
-# ♻️ RecycleBot — Recicla. Gana. Impacta.
+# 🌿 Invernadero IoT — ESP32
 
-> **Máquina inteligente de reciclaje con sistema de recompensas, potenciada por IA y conectada a supermercados colombianos.**
-
----
-
-## 🌎 Visión del Proyecto
-
-### ¿Qué problema resuelve?
-
-Colombia genera más de **12 millones de toneladas de residuos sólidos al año**, pero solo recicla formalmente el **17%** de ese total. La paradoja: millones de colombianos ya separan sus residuos en casa, pero cuando salen a la calle **no encuentran a dónde llevarlos**. Los puntos de reciclaje son escasos, invisibles o inseguros. Los supermercados —el punto de contacto más frecuente entre ciudadano y empaque plástico— no tienen ningún sistema de retorno.
-
-**La falla no es de conciencia ciudadana. La falla es de infraestructura y de incentivos.**
-
-### ¿Cómo lo resolvemos?
-
-RecycleBot es un **sistema físico-digital** compuesto por:
-- Una **máquina receptora de reciclaje** (kiosco) instalada en supermercados, con clasificación automática mediante IA y hardware ESP32.
-- Una **aplicación móvil** que gestiona puntos, misiones, recordatorios y cupones de descuento.
-- Un **backend** que conecta el comportamiento de reciclaje del usuario con su historial de compras (alianza con cadenas).
-
-### ¿A quiénes salva?
-
-| Segmento | Perfil |
-|----------|--------|
-| **B2C** | Personas de 18–55 años, residentes urbanos/periurbanos en Colombia, con smartphone, que ya reciclan en casa pero no tienen a dónde llevar los residuos. Compran en Éxito, Jumbo, D1, Ara o Carulla. |
-| **B2B** | Cadenas de supermercados (Grupo Éxito, Jumbo, Carulla) que necesitan cumplir metas ESG, diferenciarse con atributos verdes y fidelizar clientes. |
+Sistema de monitoreo y control automatizado de invernadero basado en ESP32, con comunicación MQTT cifrada (TLS), dashboard web local y sincronización de tiempo NTP.
 
 ---
 
-## ⚙️ Arquitectura del Sistema
+## 📋 Tabla de contenido
 
-### Diagrama de Bloques
+- [Descripción general](#descripción-general)
+- [Hardware utilizado](#hardware-utilizado)
+- [Diagrama de flujo](#diagrama-de-flujo)
+- [Endpoints API REST](#endpoints-api-rest)
+- [Temas MQTT](#temas-mqtt)
+- [Librerías utilizadas](#librerías-utilizadas)
+- [Uso de memoria](#uso-de-memoria)
+- [Limitaciones](#limitaciones)
+- [Posibilidades de mejora](#posibilidades-de-mejora)
+
+---
+
+## Descripción general
+
+El sistema permite monitorear en tiempo real la temperatura, humedad y luminosidad de un invernadero, y controlar automáticamente (o manualmente desde un dashboard web) una bomba de agua, un LED de iluminación y un ventilador.
+
+Toda la comunicación con el broker MQTT viaja cifrada por TLS en el puerto 8883 usando HiveMQ Cloud. El tiempo del ESP32 se sincroniza al arrancar mediante NTP.
+
+---
+
+## Hardware utilizado
+
+| Componente | Descripción |
+|---|---|
+| ESP32 Dev Module | Microcontrolador principal |
+| DHT22 | Sensor de temperatura y humedad |
+| Fotoresistencia (LDR) | Sensor de luminosidad analógico |
+| Módulo Relay x4 | Control de actuadores |
+| Mini bomba sumergible 5V | Actuador de riego |
+| LED 5V | Actuador de iluminación |
+| Ventilador 5V | Actuador de ventilación |
+| Fuente 5V / 3A | Alimentación de actuadores y ESP32 |
+
+---
+
+## Diagrama de flujo
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        USUARIO FINAL                            │
-│              (deposita material reciclable)                     │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    KIOSCO FÍSICO (Hardware)                      │
-│                                                                  │
-│  ┌─────────────┐   ┌──────────────┐   ┌──────────────────────┐ │
-│  │  Cámara     │──▶│   ESP32-CAM  │──▶│  Sensor de peso /    │ │
-│  │  (imagen)   │   │  + WiFi      │   │  Sensor IR           │ │
-│  └─────────────┘   └──────┬───────┘   └──────────────────────┘ │
-│                            │                                     │
-│                    MQTT / HTTP REST                              │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        BACKEND (Cloud)                           │
-│                                                                  │
-│  ┌──────────────────┐    ┌───────────────────────────────────┐  │
-│  │  API REST        │    │  Motor de IA                      │  │
-│  │  (Node.js /      │◀──▶│  - Clasificación de materiales    │  │
-│  │   FastAPI)       │    │    (Vision API / modelo propio)   │  │
-│  └────────┬─────────┘    │  - Análisis de patrones usuario   │  │
-│           │              │  - Motor de recomendaciones       │  │
-│           ▼              └───────────────────────────────────┘  │
-│  ┌──────────────────┐    ┌───────────────────────────────────┐  │
-│  │  Base de Datos   │    │  Motor de Puntos & Recompensas    │  │
-│  │  (Supabase /     │◀──▶│  - Cálculo de puntos por material │  │
-│  │   PostgreSQL)    │    │  - Canje de cupones               │  │
-│  └──────────────────┘    └───────────────────────────────────┘  │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                   ┌─────────┴──────────┐
-                   │                    │
-                   ▼                    ▼
-        ┌─────────────────┐   ┌──────────────────────┐
-        │  App Móvil      │   │  Dashboard B2B       │
-        │  (React Native/ │   │  (Reportes ESG,      │
-        │   Flutter)      │   │   inventario,        │
-        │                 │   │   datos reciclaje)   │
-        │  - Historial    │   └──────────────────────┘
-        │  - Puntos       │
-        │  - Misiones     │
-        │  - Cupones      │
-        └─────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    ARRANQUE ESP32                    │
+└─────────────────────┬───────────────────────────────┘
+                      │
+                      ▼
+         ┌────────────────────────┐
+         │  ¿Hay credenciales     │
+         │    WiFi guardadas?     │
+         └────────┬───────────────┘
+          NO      │        SÍ
+          ▼       │        ▼
+    Portal        │   Conectar WiFi
+    captivo       │        │
+    AP Setup      │        ▼
+                  │   Sincronizar NTP
+                  │        │
+                  │        ▼
+                  │   Conectar MQTT TLS
+                  │   (HiveMQ Cloud :8883)
+                  │        │
+                  │        ▼
+                  │   Iniciar WebServer
+                  │   (Dashboard :80)
+                  │
+                  └─────────────────────┐
+                                        │
+              ┌─────────────────────────▼──────────────────────┐
+              │                     LOOP                        │
+              │                                                 │
+              │  Cada 5 s:                                      │
+              │  ┌──────────────────────────────────────────┐  │
+              │  │ Leer DHT22 → temperatura, humedad        │  │
+              │  │ Leer LDR   → luminosidad (ADC 12 bit)   │  │
+              │  │ Publicar datos → MQTT broker             │  │
+              │  └──────────────────────────────────────────┘  │
+              │                                                 │
+              │  ¿Modo AUTO?                                    │
+              │  ┌──────────────────────────────────────────┐  │
+              │  │ Temp > umbral máx  → Ventilador ON       │  │
+              │  │ Humedad < umbral mín → Bomba ON          │  │
+              │  │ Luz < umbral mín   → LED ON              │  │
+              │  └──────────────────────────────────────────┘  │
+              │                                                 │
+              │  ¿Modo MANUAL?                                  │
+              │  ┌──────────────────────────────────────────┐  │
+              │  │ Comandos desde Dashboard o MQTT          │  │
+              │  │ controlan directamente los actuadores    │  │
+              │  └──────────────────────────────────────────┘  │
+              │                                                 │
+              │  Cada 30 s: Publicar healthcheck → MQTT        │
+              └─────────────────────────────────────────────────┘
 ```
 
-### Stack Tecnológico
+---
 
-| Capa | Tecnología |
-|------|-----------|
-| **Hardware** | ESP32-CAM (clasificación visual), ESP32 (control general), sensor de peso HX711, sensor IR de presencia |
-| **Firmware** | Arduino IDE / PlatformIO (C++) |
-| **Comunicación** | MQTT sobre WiFi (ESP32 → Backend) |
-| **Backend** | FastAPI (Python) o Node.js + Express |
-| **IA/ML** | TensorFlow Lite (on-device en ESP32 o en servidor), Google Vision API (como respaldo) |
-| **Base de datos** | Supabase (PostgreSQL + Auth + Storage) |
-| **App Móvil** | React Native o Flutter |
-| **Dashboard B2B** | React.js |
+## Endpoints API REST
+
+El dashboard web corre en el ESP32 en el puerto 80. Todos los endpoints retornan JSON.
 
 ---
 
-## 🔧 Restricciones de Hardware — ESP32
+### `GET /`
 
-| Recurso | Valor | Implicación |
-|---------|-------|-------------|
-| **RAM** | 520 KB SRAM | El modelo de IA no puede correr completamente on-device; la imagen se envía al servidor para clasificación |
-| **Flash** | 4 MB (típico) | Firmware liviano; assets mínimos almacenados localmente |
-| **CPU** | Xtensa LX6 dual-core @ 240 MHz | Suficiente para captura de imagen, MQTT y lógica básica |
-| **Consumo** | ~240 mA activo / ~10 µA deep sleep | Requiere fuente de alimentación estable (kiosco conectado a red eléctrica) |
-| **Conectividad** | WiFi 802.11 b/g/n, Bluetooth | WiFi principal; BT como respaldo local |
-| **Cámara (ESP32-CAM)** | OV2640, hasta 2MP | Resolución suficiente para clasificar plástico, vidrio, cartón |
-| **Temperatura operación** | –40°C a +85°C | Apto para interior de supermercado |
+Retorna el HTML del dashboard de control.
 
-**Decisión arquitectónica clave:** La clasificación de imágenes se realiza **en el servidor** (no on-device), ya que la RAM del ESP32 es insuficiente para modelos de visión robustos. El ESP32-CAM captura la imagen → la envía vía HTTP POST al backend → el backend responde con la categoría → el ESP32 actúa (abre compuerta, muestra resultado en pantalla/LEDs).
+**Respuesta:** `text/html` — Página web del invernadero.
 
 ---
 
-## 💰 Presupuesto Estimado (Prototipo MVP)
+### `GET /api/status`
 
-| Componente | Costo estimado (COP) |
-|------------|----------------------|
-| ESP32-CAM | $35.000 |
-| ESP32 DevKit (control) | $25.000 |
-| Sensor de peso HX711 + celda de carga | $20.000 |
-| Sensor IR de presencia | $8.000 |
-| Pantalla TFT 2.4" (feedback visual) | $35.000 |
-| Estructura física kiosco (acrílico/madera) | $200.000 |
-| Fuente de alimentación 5V/3A | $18.000 |
-| Cables, protoboard, conectores | $15.000 |
-| Hosting backend (Supabase free tier + VPS básico) | $0 – $50.000/mes |
-| **Total hardware prototipo** | **~$356.000** |
+Healthcheck del sistema. Verifica que el servidor está arriba y retorna el estado general.
 
----
-
-## 🚀 MVP — Minimum Viable Product
-
-El MVP demuestra el ciclo completo: **depositar un objeto → clasificarlo con IA → sumar puntos al usuario**.
-
-### Must-Have (esencial para funcionar)
-- [ ] ESP32-CAM captura imagen del objeto depositado
-- [ ] Backend recibe imagen y devuelve categoría (plástico / vidrio / cartón / metal / otro)
-- [ ] Registro de usuario y autenticación (app/web básica)
-- [ ] Sistema de puntos: asignación automática según material y peso
-- [ ] Historial de reciclaje del usuario
-- [ ] Dashboard básico de administración (ver transacciones de la máquina)
-
-### Nice-to-Have (mejoras futuras)
-- [ ] Sistema de misiones y recordatorios push
-- [ ] Integración con historial de compras de supermercados
-- [ ] Motor de recomendaciones de cupones personalizado
-- [ ] Reporte ESG exportable para B2B
-- [ ] Soporte multi-máquina (red de kioscos)
-- [ ] Gamificación avanzada (niveles, badges, leaderboard)
+**Respuesta:**
+```json
+{
+  "status": "ok",
+  "uptime_s": 3600,
+  "timestamp": "2026-05-24T22:48:32",
+  "modo": "auto",
+  "bomba": false,
+  "led": false,
+  "ventilador": true,
+  "ip": "10.210.225.116"
+}
+```
 
 ---
 
-## 🔬 Spike Arquitectónico — Release 1
+### `GET /api/sensors`
 
-**Pregunta crítica:** ¿Es viable clasificar materiales reciclables (plástico, vidrio, cartón, metal) con suficiente precisión usando la cámara del ESP32-CAM enviando imágenes a un modelo en servidor?
+Retorna la lectura actual de todos los sensores.
 
-**Tareas del Spike:**
-1. Configurar ESP32-CAM para capturar y enviar imagen vía HTTP a un servidor local.
-2. Probar Google Vision API (o un modelo TFLite en servidor) con imágenes de materiales reciclables comunes.
-3. Medir latencia total (captura → clasificación → respuesta) y evaluar si es aceptable (< 3 segundos).
-4. Documentar tasa de acierto con al menos 20 objetos de prueba.
+**Respuesta:**
+```json
+{
+  "temperatura": 27.5,
+  "humedad": 65.0,
+  "luzRaw": 1024,
+  "luzPct": 25,
+  "dhtOk": true
+}
+```
 
-**Criterio de éxito:** Clasificación correcta ≥ 75% en condiciones de iluminación de supermercado, latencia < 3s.
-
----
-
-## 📅 Cronograma — Sprints y Releases
-
-### Release 1 — Fundamentos y Viabilidad (Semanas 1–2)
-| Sprint | Tareas |
-|--------|--------|
-| **Sprint 1** (Sem 1) | Setup repo, arquitectura, README, backlog en GitHub Projects, configuración entorno ESP32 |
-| **Sprint 2** (Sem 2) | **SPIKE**: ESP32-CAM → servidor → clasificación IA. Primer prototipo de comunicación funcional |
-
-**Entregable:** Certeza técnica de viabilidad + repo documentado + backlog priorizado.
-
-### Release 2 — Núcleo Funcional (Semanas 3–4)
-| Sprint | Tareas |
-|--------|--------|
-| **Sprint 3** (Sem 3) | Backend: API REST, base de datos Supabase, endpoint de clasificación |
-| **Sprint 4** (Sem 4) | Auth de usuario, sistema de puntos, historial básico en app/web |
-
-**Entregable:** Ciclo completo funcionando: depositar → clasificar → puntuar → ver en app.
-
-### Release 3 — Experiencia Completa (Semanas 5–6)
-| Sprint | Tareas |
-|--------|--------|
-| **Sprint 5** (Sem 5) | Misiones, recordatorios, sistema de cupones básico |
-| **Sprint 6** (Sem 6) | Dashboard B2B, integración sensor de peso, mejora UX app |
-
-**Entregable:** Producto con todas las features must-have funcionales y primera iteración de nice-to-have.
-
-### Release 4 — Pulido y Entrega Final (Semanas 7–8 + Finales)
-| Sprint | Tareas |
-|--------|--------|
-| **Sprint 7** (Sem 7) | Feature freeze. Corrección de bugs, estabilización del sistema |
-| **Sprint 8** (Sem 8) | Preparación demo/pitch, documentación final, ajustes presentación |
-
-**Entregable:** Producto final listo para demostración.
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `temperatura` | float | Temperatura en °C. `-999` si el DHT22 falla |
+| `humedad` | float | Humedad relativa en %. `-999` si el DHT22 falla |
+| `luzRaw` | int | Valor ADC crudo (0 – 4095) |
+| `luzPct` | int | Luminosidad en porcentaje (0 – 100%) |
+| `dhtOk` | bool | `false` si la lectura del DHT22 es inválida |
 
 ---
 
-## 🧠 ¿Qué tareas "sobrehumanas" hará la IA?
+### `GET /api/actuators`
 
-1. **Clasificación visual** de materiales reciclables al momento del depósito.
-2. **Análisis de patrones de comportamiento** del usuario (frecuencia, materiales, horarios).
-3. **Recordatorios inteligentes** basados en historial de compras y reciclaje.
-4. **Recomendaciones personalizadas** de cupones según preferencias de consumo.
-5. **Sugerencias de compra** indicando qué productos de la próxima compra son reciclables.
+Retorna el estado actual de los actuadores.
+
+**Respuesta:**
+```json
+{
+  "bomba": false,
+  "led": true,
+  "ventilador": false
+}
+```
 
 ---
 
-## 👥 Equipo
+### `POST /api/control`
 
->Daniel Sanchez Sotelo, Juan Camilo Gomez Bayona, Jeronimo Infante Vega
+Cambia el modo de operación o controla un actuador en modo manual.
+
+**Body:**
+```json
+{
+  "accion": "modo",
+  "valor": "manual"
+}
+```
+
+| `accion` | `valor` válidos | Descripción |
+|---|---|---|
+| `"modo"` | `"auto"` / `"manual"` | Cambia el modo de operación |
+| `"bomba"` | `"1"` / `"0"` | Enciende o apaga la bomba (solo en modo manual) |
+| `"led"` | `"1"` / `"0"` | Enciende o apaga el LED (solo en modo manual) |
+| `"ventilador"` | `"1"` / `"0"` | Enciende o apaga el ventilador (solo en modo manual) |
+
+**Respuesta:**
+```json
+{ "ok": true }
+```
 
 ---
 
-## 📄 Licencia
+### `POST /api/umbrales`
 
-MIT License — Ver `LICENSE` para más detalles.
+Actualiza los umbrales del modo automático en tiempo real.
+
+**Body:**
+```json
+{
+  "tempMax": 30.0,
+  "humedadMin": 40.0,
+  "luzMin": 300
+}
+```
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `tempMax` | float | Temperatura máxima en °C — activa el ventilador |
+| `humedadMin` | float | Humedad mínima en % — activa la bomba |
+| `luzMin` | int | Valor ADC mínimo (0-4095) — activa el LED |
+
+Todos los campos son opcionales; solo se actualizan los que se envíen.
+
+**Respuesta:**
+```json
+{ "ok": true }
+```
+
+---
+
+## Temas MQTT
+
+Broker: **HiveMQ Cloud** — Puerto **8883 (TLS)**
+
+### Publica (ESP32 → Broker)
+
+| Topic | Frecuencia | Payload de ejemplo |
+|---|---|---|
+| `invernadero/sensores/temperatura` | Cada 5 s | `{"valor": 27.5, "unidad": "°C", "timestamp": "2026-05-24T22:48:32"}` |
+| `invernadero/sensores/humedad` | Cada 5 s | `{"valor": 65.0, "unidad": "%", "timestamp": "2026-05-24T22:48:32"}` |
+| `invernadero/sensores/luz` | Cada 5 s | `{"valor": 1024, "porcentaje": 25, "timestamp": "2026-05-24T22:48:32"}` |
+| `invernadero/status` | Cada 30 s | `{"status": "online", "modo": "auto", "bomba": false, "led": false, "ventilador": true, "ip": "10.x.x.x", "uptime_s": 3600, "timestamp": "..."}` |
+
+El topic `invernadero/status` se publica con **retained = true**, por lo que cualquier cliente que se suscriba recibe el último estado inmediatamente.
+
+---
+
+### Suscribe (Broker → ESP32)
+
+| Topic | Payload válido | Descripción |
+|---|---|---|
+| `invernadero/cmd/modo` | `"auto"` / `"manual"` | Cambia el modo de operación |
+| `invernadero/cmd/bomba` | `"1"` / `"0"` / `"ON"` / `"OFF"` | Controla la bomba (solo en modo manual) |
+| `invernadero/cmd/led` | `"1"` / `"0"` / `"ON"` / `"OFF"` | Controla el LED (solo en modo manual) |
+| `invernadero/cmd/ventilador` | `"1"` / `"0"` / `"ON"` / `"OFF"` | Controla el ventilador (solo en modo manual) |
+| `invernadero/cmd/umbrales` | JSON con `tempMax`, `humedadMin`, `luzMin` | Actualiza umbrales automáticos |
+
+> Los comandos a actuadores enviados por MQTT son ignorados si el sistema está en modo AUTO.
+
+---
+
+## Librerías utilizadas
+
+| Librería | Versión recomendada | Autor | Uso |
+|---|---|---|---|
+| `DHT sensor library` | ≥ 1.4.4 | Adafruit | Lectura del sensor DHT22 |
+| `Adafruit Unified Sensor` | ≥ 1.1.9 | Adafruit | Dependencia de DHT |
+| `PubSubClient` | ≥ 2.8.0 | Nick O'Leary | Cliente MQTT |
+| `ArduinoJson` | ≥ 6.21.0 | Benoit Blanchon | Serialización/deserialización JSON |
+| `WiFi` | (incluida en ESP32 core) | Espressif | Conexión WiFi |
+| `WiFiClientSecure` | (incluida en ESP32 core) | Espressif | TLS sobre WiFi |
+| `WebServer` | (incluida en ESP32 core) | Espressif | Servidor HTTP |
+| `DNSServer` | (incluida en ESP32 core) | Espressif | Portal captivo DNS |
+| `Preferences` | (incluida en ESP32 core) | Espressif | Almacenamiento NVS (credenciales WiFi) |
+
+---
+
+## Uso de memoria
+
+Generado por Arduino IDE al verificar/cargar el sketch:
+
+```
+El Sketch usa 1134297 bytes (86%) del espacio de almacenamiento de programa.
+El máximo es 1310720 bytes.
+
+Las variables globales usan 49252 bytes (15%) de la memoria dinámica,
+dejando 278428 bytes para las variables locales.
+El máximo es 327680 bytes.
+```
+
+| Recurso | Usado | Total | Porcentaje |
+|---|---|---|---|
+| Flash (programa) | 1.134.297 bytes | 1.310.720 bytes | 86% |
+| RAM (variables globales) | 49.252 bytes | 327.680 bytes | 15% |
+
+> El uso alto de Flash se debe principalmente al HTML del dashboard y los certificados TLS embebidos. La RAM disponible para variables locales (278 KB) es suficiente para la operación normal.
+
+---
+
+## Limitaciones
+
+- **Un solo cliente web a la vez:** El `WebServer` del ESP32 es de un solo hilo; conexiones simultáneas pueden causar lentitud.
+- **Sin persistencia de datos:** Las lecturas de sensores no se almacenan localmente; solo se publican al broker MQTT. Si se pierde la conexión, los datos de ese período se pierden.
+- **Flash al 86%:** Queda poco espacio para agregar funcionalidades grandes como HTTPS en el servidor web o más lógica de control.
+- **Sin reconexión automática al WiFi:** Si el router se reinicia, el ESP32 necesita reiniciarse manualmente para reconectarse.
+- **Verificación de certificado TLS desactivada:** La conexión MQTT cifra el tráfico pero no verifica la identidad del broker (`setInsecure()`).
+- **Sin autenticación en el dashboard:** Cualquier dispositivo en la misma red puede acceder y controlar el invernadero.
+- **LDR sin calibración:** El valor de luminosidad es relativo al divisor de voltaje construido; no está calibrado en lux.
+
+---
+
+## Posibilidades de mejora
+
+- **Reconexión WiFi automática:** Detectar pérdida de conexión en el loop y reconectar sin reiniciar.
+- **Certificado TLS correcto:** Cargar el certificado raíz del broker HiveMQ para activar la verificación completa.
+- **Autenticación en el dashboard:** Agregar un login básico con usuario y contraseña para proteger el acceso.
+- **Almacenamiento local de datos:** Usar la memoria SPIFFS/LittleFS del ESP32 para guardar un historial de lecturas.
+- **Gráficas históricas:** Mostrar en el dashboard una gráfica de temperatura/humedad de las últimas horas.
+- **Notificaciones:** Enviar alertas por MQTT cuando un sensor sale del rango normal.
+- **OTA (Over The Air):** Actualizar el firmware del ESP32 por WiFi sin necesidad de conectar el cable USB.
+- **Sensor de nivel de agua:** Agregar un sensor para saber cuándo el depósito de la bomba está vacío.
+- **Múltiples zonas:** Escalar el sistema para controlar varias secciones del invernadero de forma independiente.
+- **Integración con Node-RED o Grafana:** Conectar el broker MQTT a una plataforma de visualización más completa.
