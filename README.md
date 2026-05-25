@@ -4,6 +4,14 @@ Sistema de monitoreo y control automatizado de invernadero basado en ESP32, con 
 
 ---
 
+## 👥 Integrantes
+
+- Juan Camilo Gómez Bayona
+- Daniel Sanchez Sotelo
+- Jeronimo Infante Vega
+
+---
+
 ## 📋 Tabla de contenido
 
 - [Descripción general](#descripción-general)
